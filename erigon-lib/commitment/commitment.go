@@ -1062,9 +1062,13 @@ func (t *Updates) TouchAccount(c *KeyUpdate, val []byte) {
 	}
 
 	acc := accounts.Account{}
-	err := accounts.DeserialiseV3(&acc, val)
+	err, isKaia := deserialiseV3Safe(&acc, val)
 	if err != nil {
 		panic(err)
+	} else if isKaia {
+		c.update.Flags |= RawBytesUpdate
+		copy(c.update.RawBytes[:], val)
+		return
 	}
 	if c.update.Nonce != acc.Nonce {
 		c.update.Nonce = acc.Nonce
@@ -1082,6 +1086,19 @@ func (t *Updates) TouchAccount(c *KeyUpdate, val []byte) {
 			copy(c.update.CodeHash[:], acc.CodeHash.Bytes())
 		}
 	}
+}
+
+// TODO: Verify Kaia RLP format, return (nil, true) for Kaia / (err, false) for malformed data.
+func deserialiseV3Safe(acc *accounts.Account, val []byte) (err error, isKaia bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = nil
+			isKaia = true
+		}
+	}()
+	err = accounts.DeserialiseV3(acc, val)
+	isKaia = false
+	return
 }
 
 func (t *Updates) TouchStorage(c *KeyUpdate, val []byte) {
