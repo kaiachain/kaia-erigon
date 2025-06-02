@@ -19,9 +19,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/common/hexutil"
 	"github.com/erigontech/erigon-lib/common/length"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,29 +32,29 @@ type accountsTC []struct {
 	accountHex string
 }
 
-func TestKaia_RootHash(t *testing.T) {
-	/* Sample accounts from Kairos block #1 state.
-	// = https://github.com/kaiachain/kaia/blob/dev/blockchain/genesis_alloc.go + 9.6 KAIA to the proposer.
-	accs := []accounts.Account{
-		{ // 0x0000000000000000000000000000000000000400
-			CodeHash: common.HexToHash("0x6c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f09"),
-			Root:     common.HexToHash("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"),
-		},
-		{ // 0x4937a6f664630547f6b0c3c235c4f03a64ca36b1
-			Balance: *uint256.MustFromHex("0x446c3b15f9926687d2c40534fdb564000000000000"),
-		},
-		{ // 0xb74ff9dea397fe9e231df545eb53fe2adf776cb2
-			Balance: *uint256.NewInt(0x853a0d2313c00000),
-		},
-	}
-	for _, acc := range accs {
-		ser := accounts.SerialiseV3(&acc)
-		fmt.Printf("serialised account: %x\n", ser)
-	}
-	t.Fatal(0)
-	return
-	*/
+/* Sample accounts from Kairos block #1 state.
+// = https://github.com/kaiachain/kaia/blob/dev/blockchain/genesis_alloc.go + 9.6 KAIA to the proposer.
+accs := []accounts.Account{
+	{ // 0x0000000000000000000000000000000000000400
+		CodeHash: common.HexToHash("0x6c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f09"),
+		Root:     common.HexToHash("0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"),
+	},
+	{ // 0x4937a6f664630547f6b0c3c235c4f03a64ca36b1
+		Balance: *uint256.MustFromHex("0x446c3b15f9926687d2c40534fdb564000000000000"),
+	},
+	{ // 0xb74ff9dea397fe9e231df545eb53fe2adf776cb2
+		Balance: *uint256.NewInt(0x853a0d2313c00000),
+	},
+}
+for _, acc := range accs {
+	ser := accounts.SerialiseV3(&acc)
+	fmt.Printf("serialised account: %x\n", ser)
+}
+t.Fatal(0)
+return
+*/
 
+func TestKaia_RootHash(t *testing.T) {
 	testcases := []struct {
 		accounts accountsTC
 		hash     common.Hash
@@ -89,18 +91,73 @@ func TestKaia_RootHash(t *testing.T) {
 	}
 
 	for i, tc := range testcases {
-		ctx := context.Background()
-		ms := NewMockState(t)
-		hph := NewHexPatriciaHashed(length.Addr, ms, ms.TempDir())
-		hph.SetTrace(false)
-
 		upd := NewUpdates(ModeUpdate, t.TempDir(), KeyToHexNibbleHash)
 		for _, account := range tc.accounts {
 			upd.TouchPlainKey(string(hexutil.MustDecode(account.addressHex)), hexutil.MustDecode(account.accountHex), upd.TouchAccount)
 		}
 
+		ctx := context.Background()
+		ms := NewMockState(t)
+		hph := NewHexPatriciaHashed(length.Addr, ms, ms.TempDir())
+		hph.SetTrace(testing.Verbose())
+
 		rootHash, err := hph.Process(ctx, upd, "")
 		require.NoError(t, err, i)
-		require.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash).Hex(), i)
+		assert.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash).Hex(), i)
+	}
+}
+
+func TestKaia_RestoreState(t *testing.T) {
+	testcases := []struct {
+		accounts accountsTC
+		hash     common.Hash
+	}{
+		{ // Kairos block #1 state, ErigonV3 encoding
+			accountsTC{
+				{"0x0000000000000000000000000000000000000400", "0x0000206c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0900"},
+				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x0015446c3b15f9926687d2c40534fdb5640000000000000000"},
+				{"0xb74ff9dea397fe9e231df545eb53fe2adf776cb2", "0x0008853a0d2313c000000000"},
+			},
+			common.HexToHash("0x2e3360035cfdedcf87082405607284572e3df196954133ea713c343c9bc80d73"),
+		},
+		{ // Kairos block #1 state, Kaia RLP encoding / incremental (3/3)
+			accountsTC{
+				{"0x0000000000000000000000000000000000000400", "0x02f849c580808003c0a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a06c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0980"},
+				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x01da8095446c3b15f9926687d2c40534fdb5640000000000008001c0"},
+				{"0xb74ff9dea397fe9e231df545eb53fe2adf776cb2", "0x01cd8088853a0d2313c000008001c0"},
+			},
+			common.HexToHash("0x60e8f25e2fb479e625347c1f11e2f07c9cd7d0a5320013294d89281b6fceed4f"),
+		},
+	}
+
+	for i, tc := range testcases {
+		upd := NewUpdates(ModeUpdate, t.TempDir(), KeyToHexNibbleHash)
+		for _, account := range tc.accounts {
+			upd.TouchPlainKey(string(hexutil.MustDecode(account.addressHex)), hexutil.MustDecode(account.accountHex), upd.TouchAccount)
+		}
+
+		// 1. From the clean hph, apply the updates.
+		ctx := context.Background()
+		ms := NewMockState(t)
+		hph1 := NewHexPatriciaHashed(length.Addr, ms, ms.TempDir())
+		hph1.SetTrace(testing.Verbose())
+
+		rootHash, err := hph1.Process(ctx, upd, "")
+		require.NoError(t, err, i)
+		assert.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash).Hex(), i)
+
+		// 2. Dump the hph state.
+		hphState, err := hph1.EncodeCurrentState(nil)
+		require.NoError(t, err, i)
+		spew.Dump(hphState)
+
+		// 3. New clean hph, load the state.
+		hph2 := NewHexPatriciaHashed(length.Addr, ms, ms.TempDir())
+		hph2.SetTrace(testing.Verbose())
+		hph2.SetState(hphState)
+
+		rootHash2, err := hph2.RootHash()
+		require.NoError(t, err, i)
+		assert.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash2).Hex(), i)
 	}
 }
