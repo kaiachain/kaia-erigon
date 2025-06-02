@@ -21,6 +21,7 @@ import (
 
 	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/common/hexutil"
+	"github.com/erigontech/erigon-lib/common/length"
 	"github.com/stretchr/testify/require"
 )
 
@@ -62,7 +63,7 @@ func TestKaia_RootHash(t *testing.T) {
 				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x0015446c3b15f9926687d2c40534fdb5640000000000000000"},
 				{"0xb74ff9dea397fe9e231df545eb53fe2adf776cb2", "0x0008853a0d2313c000000000"},
 			},
-			common.HexToHash("0xa6378e8c64dffd18348e9a2168deecd94aacf4adc9945b1a455284989c3efb40"),
+			common.HexToHash("0x2e3360035cfdedcf87082405607284572e3df196954133ea713c343c9bc80d73"),
 		},
 		{ // Kairos block #1 state, Kaia RLP encoding / incremental (1/3)
 			accountsTC{
@@ -90,16 +91,16 @@ func TestKaia_RootHash(t *testing.T) {
 	for i, tc := range testcases {
 		ctx := context.Background()
 		ms := NewMockState(t)
-		hph := NewHexPatriciaHashed(1, ms, ms.TempDir())
+		hph := NewHexPatriciaHashed(length.Addr, ms, ms.TempDir())
 		hph.SetTrace(false)
 
 		upd := NewUpdates(ModeUpdate, t.TempDir(), KeyToHexNibbleHash)
 		for _, account := range tc.accounts {
-			upd.TouchPlainKey(account.addressHex, hexutil.MustDecode(account.accountHex), upd.TouchAccount)
+			upd.TouchPlainKey(string(hexutil.MustDecode(account.addressHex)), hexutil.MustDecode(account.accountHex), upd.TouchAccount)
 		}
 
 		rootHash, err := hph.Process(ctx, upd, "")
-		require.NoError(t, err)
+		require.NoError(t, err, i)
 		require.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash).Hex(), i)
 	}
 }
