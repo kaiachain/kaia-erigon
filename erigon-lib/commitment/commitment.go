@@ -22,11 +22,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/erigontech/erigon-lib/types/accounts"
 	"math/bits"
 	"sort"
 	"strings"
 	"unsafe"
+
+	"github.com/erigontech/erigon-lib/types/accounts"
 
 	"github.com/holiman/uint256"
 
@@ -1180,11 +1181,12 @@ func keyUpdateLessFn(i, j *KeyUpdate) bool {
 type UpdateFlags uint8
 
 const (
-	CodeUpdate    UpdateFlags = 1
-	DeleteUpdate  UpdateFlags = 2
-	BalanceUpdate UpdateFlags = 4
-	NonceUpdate   UpdateFlags = 8
-	StorageUpdate UpdateFlags = 16
+	CodeUpdate     UpdateFlags = 1
+	DeleteUpdate   UpdateFlags = 2
+	BalanceUpdate  UpdateFlags = 4
+	NonceUpdate    UpdateFlags = 8
+	StorageUpdate  UpdateFlags = 16
+	RawBytesUpdate UpdateFlags = 32
 )
 
 func (uf UpdateFlags) String() string {
@@ -1204,16 +1206,23 @@ func (uf UpdateFlags) String() string {
 	if uf&StorageUpdate != 0 {
 		sb.WriteString("+Storage")
 	}
+	if uf&RawBytesUpdate != 0 {
+		sb.WriteString("+RawBytes")
+	}
 	return sb.String()
 }
 
 type Update struct {
+	// Ethereum-compatible fields
 	CodeHash   [length.Hash]byte
 	Storage    [length.Hash]byte
 	StorageLen int
 	Flags      UpdateFlags
 	Balance    uint256.Int
 	Nonce      uint64
+
+	// In case of Ethereum-incompatible account store RLP encoded value
+	RawBytes []byte
 }
 
 func (u *Update) Reset() {
@@ -1222,6 +1231,7 @@ func (u *Update) Reset() {
 	u.Nonce = 0
 	u.StorageLen = 0
 	u.CodeHash = EmptyCodeHashArray
+	u.RawBytes = nil
 }
 
 func (u *Update) Merge(b *Update) {
@@ -1246,6 +1256,11 @@ func (u *Update) Merge(b *Update) {
 		copy(u.Storage[:], b.Storage[:b.StorageLen])
 		u.StorageLen = b.StorageLen
 	}
+	if b.Flags&RawBytesUpdate != 0 {
+		u.Flags |= RawBytesUpdate
+		u.RawBytes = make([]byte, len(b.RawBytes))
+		copy(u.RawBytes[:], b.RawBytes)
+	}
 }
 
 func (u *Update) Encode(buf []byte, numBuf []byte) []byte {
@@ -1267,6 +1282,12 @@ func (u *Update) Encode(buf []byte, numBuf []byte) []byte {
 		if u.StorageLen > 0 {
 			buf = append(buf, u.Storage[:u.StorageLen]...)
 		}
+	}
+	if u.Flags&RawBytesUpdate != 0 {
+		l := len(u.RawBytes)
+		n := binary.PutUvarint(numBuf, uint64(l))
+		buf = append(buf, numBuf[:n]...)
+		buf = append(buf, u.RawBytes...)
 	}
 	return buf
 }
@@ -1329,6 +1350,22 @@ func (u *Update) Decode(buf []byte, pos int) (int, error) {
 		copy(u.Storage[:], buf[pos:pos+u.StorageLen])
 		pos += u.StorageLen
 	}
+	if u.Flags&RawBytesUpdate != 0 {
+		l, n := binary.Uvarint(buf[pos:])
+		if n == 0 {
+			return 0, errors.New("decode Update: buffer too small for raw bytes len")
+		}
+		if n < 0 {
+			return 0, errors.New("decode Update: raw bytes pos overflow")
+		}
+		pos += n
+		if len(buf) < pos+int(l) {
+			return 0, errors.New("decode Update: buffer too small for raw bytes")
+		}
+		u.RawBytes = make([]byte, l)
+		copy(u.RawBytes[:], buf[pos:pos+int(l)])
+		pos += int(l)
+	}
 	return pos, nil
 }
 
@@ -1349,6 +1386,9 @@ func (u *Update) String() string {
 	}
 	if u.Flags&StorageUpdate != 0 {
 		sb.WriteString(fmt.Sprintf(", Storage: [%x]", u.Storage[:u.StorageLen]))
+	}
+	if u.Flags&RawBytesUpdate != 0 {
+		sb.WriteString(fmt.Sprintf(", RawBytes: [%x]", u.RawBytes))
 	}
 	return sb.String()
 }
