@@ -19,7 +19,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/common/hexutil"
 	"github.com/erigontech/erigon-lib/common/length"
@@ -117,7 +116,6 @@ func TestKaia_RootHash(t *testing.T) {
 		hph.SetTrace(testing.Verbose())
 
 		rootHash, err := hph.Process(ctx, upd, "")
-		spew.Dump(hph.grid)
 		require.NoError(t, err, i)
 		assert.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash).Hex(), i)
 	}
@@ -165,7 +163,6 @@ func TestKaia_RestoreState(t *testing.T) {
 		// 2. Dump the hph state.
 		hphState, err := hph1.EncodeCurrentState(nil)
 		require.NoError(t, err, i)
-		spew.Dump(hphState)
 
 		// 3. New clean hph, load the state.
 		hph2 := NewHexPatriciaHashed(length.Addr, ms, ms.TempDir())

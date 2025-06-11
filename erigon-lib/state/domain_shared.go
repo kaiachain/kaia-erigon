@@ -468,6 +468,7 @@ func (sd *SharedDomains) LatestCommitment(prefix []byte) ([]byte, uint64, error)
 
 // replaceShortenedKeysInBranch replaces shortened keys in the branch with full keys
 func (sd *SharedDomains) replaceShortenedKeysInBranch(prefix []byte, branch commitment.BranchData, fStartTxNum uint64, fEndTxNum uint64) (commitment.BranchData, error) {
+	fmt.Printf("[SD] replaceShortenedKeysInBranch: %x\n", prefix)
 	if !sd.aggTx.d[kv.CommitmentDomain].d.replaceKeysInValues && sd.aggTx.a.commitmentValuesTransform {
 		panic("domain.replaceKeysInValues is disabled, but agg.commitmentValuesTransform is enabled")
 	}
@@ -863,6 +864,7 @@ func (sd *SharedDomains) DomainPut(domain kv.Domain, k1, k2 []byte, val, prevVal
 		}
 	}
 
+	fmt.Printf("[SD] DomainPut[%d] %x: %x -> %x\n", domain, k1, prevVal, val)
 	switch domain {
 	case kv.AccountsDomain:
 		return sd.updateAccountData(k1, val, prevVal, prevStep)
@@ -962,6 +964,8 @@ type SharedDomainsCommitmentContext struct {
 	patriciaTrie  commitment.Trie
 	justRestored  atomic.Bool
 
+	pendingAccounts map[string][]byte
+
 	limitReadAsOfTxNum uint64
 	domainsOnly        bool // if true, do not use history reader and limit to domain files only
 }
@@ -976,8 +980,9 @@ func (sdc *SharedDomainsCommitmentContext) SetLimitReadAsOfTxNum(txNum uint64, d
 
 func NewSharedDomainsCommitmentContext(sd *SharedDomains, mode commitment.Mode, trieVariant commitment.TrieVariant) *SharedDomainsCommitmentContext {
 	ctx := &SharedDomainsCommitmentContext{
-		sharedDomains: sd,
-		keccak:        sha3.NewLegacyKeccak256().(cryptozerocopy.KeccakState),
+		sharedDomains:   sd,
+		keccak:          sha3.NewLegacyKeccak256().(cryptozerocopy.KeccakState),
+		pendingAccounts: make(map[string][]byte),
 	}
 
 	ctx.patriciaTrie, ctx.updates = commitment.InitializeTrieAndUpdates(trieVariant, mode, sd.aggTx.a.tmpdir)
@@ -1028,6 +1033,12 @@ func (sdc *SharedDomainsCommitmentContext) PutBranch(prefix []byte, data []byte,
 }
 
 func (sdc *SharedDomainsCommitmentContext) readAccount(plainKey []byte) (encAccount []byte, err error) {
+	if val, ok := sdc.pendingAccounts[string(plainKey)]; ok {
+		fmt.Printf("[SDC] readAccount map: %x: %x\n", plainKey, val)
+		return val, nil
+	}
+	fmt.Printf("[SDC] readAccount db: %x\n", plainKey)
+
 	if sdc.limitReadAsOfTxNum > 0 { // read not from latest
 		if sdc.domainsOnly { // read from previous files
 			encAccount, _, err = sdc.sharedDomains.getAsOfFile(kv.AccountsDomain, plainKey, nil, sdc.limitReadAsOfTxNum)
@@ -1090,8 +1101,15 @@ func (sdc *SharedDomainsCommitmentContext) Account(plainKey []byte) (u *commitme
 	}
 
 	acc := new(accounts.Account)
-	if err = accounts.DeserialiseV3(acc, encAccount); err != nil {
+	err, isKaia := commitment.DeserialiseV3Safe(acc, encAccount)
+	if err != nil {
 		return nil, err
+	}
+	if isKaia {
+		u.Flags |= commitment.RawBytesUpdate
+		u.RawBytes = make([]byte, len(encAccount))
+		copy(u.RawBytes, encAccount)
+		return u, nil
 	}
 
 	u.Flags |= commitment.NonceUpdate
@@ -1220,6 +1238,7 @@ func (sdc *SharedDomainsCommitmentContext) ComputeCommitment(ctx context.Context
 }
 
 func (sdc *SharedDomainsCommitmentContext) storeCommitmentState(blockNum uint64, rootHash []byte) error {
+	fmt.Printf("[SDC] storeCommitmentState: %x\n", rootHash)
 	if sdc.sharedDomains.aggTx == nil {
 		return fmt.Errorf("store commitment state: AggregatorContext is not initialized")
 	}

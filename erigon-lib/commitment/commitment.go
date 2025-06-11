@@ -1062,7 +1062,7 @@ func (t *Updates) TouchAccount(c *KeyUpdate, val []byte) {
 	}
 
 	acc := accounts.Account{}
-	err, isKaia := deserialiseV3Safe(&acc, val)
+	err, isKaia := DeserialiseV3Safe(&acc, val)
 	if err != nil {
 		panic(err)
 	} else if isKaia {
@@ -1090,7 +1090,7 @@ func (t *Updates) TouchAccount(c *KeyUpdate, val []byte) {
 }
 
 // TODO: Verify Kaia RLP format, return (nil, true) for Kaia / (err, false) for malformed data.
-func deserialiseV3Safe(acc *accounts.Account, val []byte) (err error, isKaia bool) {
+func DeserialiseV3Safe(acc *accounts.Account, val []byte) (err error, isKaia bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = nil
