@@ -112,7 +112,6 @@ func openKaiaMdbx(t *testing.T, dirs datadir.Dirs) (kv.RwDB, *Aggregator) {
 		MapSize(2 * 1024 * 1024 * 1024).
 		Open(context.Background())
 	require.NoError(t, err)
-	fmt.Println("db opened")
 
 	aggStep := uint64(10) // ??
 	agg, err := NewAggregator2(context.Background(), dirs, aggStep, db, logger)
@@ -165,6 +164,48 @@ func TestKaiaDBM(t *testing.T) {
 	})
 }
 
+type kaiaPatriciaContext struct {
+	sdc             *SharedDomainsCommitmentContext
+	pendingAccounts map[string][]byte
+	pendingBranches map[string][]byte
+}
+
+func (ctx *kaiaPatriciaContext) Branch(prefix []byte) ([]byte, uint64, error) {
+	if ctx.pendingBranches != nil {
+		if data, ok := ctx.pendingBranches[string(prefix)]; ok {
+			return data, 0, nil
+		}
+	}
+	return ctx.sdc.Branch(prefix)
+}
+
+func (ctx *kaiaPatriciaContext) PutBranch(prefix []byte, data []byte, prevData []byte, prevStep uint64) error {
+	if ctx.pendingBranches != nil {
+		ctx.pendingBranches[string(prefix)] = data
+	}
+	return nil
+}
+
+func (ctx *kaiaPatriciaContext) Account(plainKey []byte) (*commitment.Update, error) {
+	if ctx.pendingAccounts != nil {
+		if data, ok := ctx.pendingAccounts[string(plainKey)]; ok {
+			rawBytes := make([]byte, len(data))
+			copy(rawBytes, data)
+			return &commitment.Update{
+				CodeHash: commitment.EmptyCodeHashArray,
+				Flags:    commitment.RawBytesUpdate,
+				RawBytes: rawBytes,
+			}, nil
+		}
+	}
+	return ctx.sdc.Account(plainKey)
+}
+
+func (ctx *kaiaPatriciaContext) Storage(plainKey []byte) (*commitment.Update, error) {
+	// TODO-Kaia: pendingStorage
+	return ctx.sdc.Storage(plainKey)
+}
+
 type incrementalAccountsTC []struct {
 	addressHex          string
 	accountHex          string
@@ -178,6 +219,21 @@ type kaiaTrie struct {
 
 	mu              sync.RWMutex
 	pendingAccounts map[string][]byte
+	pendingBranches map[string][]byte
+}
+
+func (trie *kaiaTrie) getInjectedTrie(sd *SharedDomains) (*SharedDomainsCommitmentContext, *commitment.HexPatriciaHashed) {
+	sdCtx := sd.GetCommitmentContext()
+	injectedCtx := &kaiaPatriciaContext{
+		sdc:             sdCtx,
+		pendingAccounts: trie.pendingAccounts,
+		pendingBranches: trie.pendingBranches,
+	}
+
+	hph := sdCtx.Trie().(*commitment.HexPatriciaHashed)
+	hph.ResetContext(injectedCtx)
+	hph.SetState(trie.hphState)
+	return sdCtx, hph
 }
 
 func (trie *kaiaTrie) updateAccount(t *testing.T, key, val []byte) {
@@ -187,46 +243,17 @@ func (trie *kaiaTrie) updateAccount(t *testing.T, key, val []byte) {
 	trie.pendingAccounts[string(key)] = val
 
 	trie.dbm.WithTx(t, func(sd *SharedDomains) bool {
-		//sd.DomainPut(kv.AccountsDomain, key, nil, val, nil, 0)
-		//sd.put(kv.AccountsDomain, string(key), val)
-
-		// tempDir := sd.GetCommitmentContext().TempDir()
-		// upd := commitment.NewUpdates(commitment.ModeUpdate, tempDir, commitment.KeyToHexNibbleHash)
-		sdCtx := sd.GetCommitmentContext()
+		sdCtx, hph := trie.getInjectedTrie(sd)
 		sdCtx.TouchKey(kv.AccountsDomain, string(key), val)
-
-		sd.GetCommitmentContext().pendingAccounts = trie.pendingAccounts
-		hph := sd.GetCommitmentContext().Trie()
-		hph.(*commitment.HexPatriciaHashed).SetState(trie.hphState)
 
 		root, err := sd.ComputeCommitment(context.Background(), false, 0, "")
 		require.NoError(t, err)
+
 		trie.root = common.BytesToHash(root)
-
-		trie.hphState, err = hph.(*commitment.HexPatriciaHashed).EncodeCurrentState(nil)
+		trie.hphState, err = hph.EncodeCurrentState(nil)
 		require.NoError(t, err)
-		fmt.Printf("[SD] updateAccount: %x: %x\n", key, val)
-		return true // It must be false!!
+		return false
 	})
-	/*
-		trie.dbm.WithTx(t, func(sd *SharedDomains) bool {
-			tempDir := sd.GetCommitmentContext().TempDir()
-			upd := commitment.NewUpdates(commitment.ModeUpdate, tempDir, commitment.KeyToHexNibbleHash)
-			upd.TouchPlainKey(string(key), val, upd.TouchAccount)
-
-			hph := sd.GetCommitmentContext().Trie()
-			err := hph.(*commitment.HexPatriciaHashed).SetState(trie.hphState)
-			require.NoError(t, err)
-
-			root, err := hph.Process(context.Background(), upd, "")
-			require.NoError(t, err)
-			trie.root = common.BytesToHash(root)
-
-			trie.hphState, err = hph.(*commitment.HexPatriciaHashed).EncodeCurrentState(nil)
-			require.NoError(t, err)
-			return false
-		})
-	*/
 }
 
 func (trie *kaiaTrie) Hash() common.Hash {
@@ -255,6 +282,7 @@ func TestKaiaTrie(t *testing.T) {
 		dbm:             dbm,
 		root:            common.BytesToHash(commitment.EmptyRootHash),
 		pendingAccounts: make(map[string][]byte),
+		pendingBranches: make(map[string][]byte),
 	}
 
 	// FlatTrie.Update()
