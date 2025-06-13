@@ -198,6 +198,7 @@ func (ctx *kaiaPatriciaContext) Account(plainKey []byte) (*commitment.Update, er
 			}, nil
 		}
 	}
+	fmt.Println("Reading account from db")
 	return ctx.sdc.Account(plainKey)
 }
 
@@ -261,6 +262,7 @@ func (trie *kaiaTrie) updateAccount(t *testing.T, key, val []byte) {
 
 	trie.pendingAccounts[string(key)] = val
 
+	// TODO: defer hash calculation to trie.Hash() and trie.Commit().
 	trie.dbm.WithTx(t, func(sd *SharedDomains) bool {
 		sdCtx, hph := trie.getInjectedTrie(sd)
 		sdCtx.TouchKey(kv.AccountsDomain, string(key), val)
@@ -287,7 +289,15 @@ func (trie *kaiaTrie) Commit(t *testing.T) { // TODO-Kaia: return hash, err
 	defer trie.mu.Unlock()
 
 	trie.dbm.WithTx(t, func(sd *SharedDomains) bool {
-		return false
+		for key, val := range trie.pendingAccounts {
+			sd.DomainPut(kv.AccountsDomain, []byte(key), nil, val, nil, 0)
+		}
+		trie.pendingAccounts = make(map[string][]byte)
+		for key, val := range trie.pendingBranches {
+			sd.DomainPut(kv.CommitmentDomain, []byte(key), nil, val, nil, 0)
+		}
+		trie.pendingBranches = make(map[string][]byte)
+		return true
 	})
 }
 
@@ -305,24 +315,49 @@ func TestKaiaTrie(t *testing.T) {
 		{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x01da8095446c3b15f9926687d2c40534fdb5640000000000008001c0", "0xbe751ffacf5fcf9998d4f90b87164ff95166d55e445c8d27cfecbe0e67a032b6"},
 		{"0xb74ff9dea397fe9e231df545eb53fe2adf776cb2", "0x01cd8088853a0d2313c000008001c0", "0x60e8f25e2fb479e625347c1f11e2f07c9cd7d0a5320013294d89281b6fceed4f"},
 	}
+	updateTC := func(trie *kaiaTrie, tc incrementalAccountsTC, i int) {
+		account := tc[i]
+		trie.updateAccount(t, hexutil.MustDecode(account.addressHex), hexutil.MustDecode(account.accountHex))
+		assert.Equal(t, common.HexToHash(account.intermediateRootHex), trie.Hash(), account.addressHex)
+	}
+	getTC := func(trie *kaiaTrie, tc incrementalAccountsTC, i int) {
+		account := tc[i]
+		val := trie.getAccount(t, hexutil.MustDecode(account.addressHex))
+		assert.Equal(t, val, hexutil.MustDecode(account.accountHex), account.addressHex)
+	}
 
 	// Open first trie
-	trie := &kaiaTrie{
+	trie1 := &kaiaTrie{
 		dbm:             dbm,
 		root:            common.BytesToHash(commitment.EmptyRootHash),
 		pendingAccounts: make(map[string][]byte),
 		pendingBranches: make(map[string][]byte),
 	}
 
-	// FlatTrie.Update()
-	for i, account := range tc {
-		trie.updateAccount(t, hexutil.MustDecode(account.addressHex), hexutil.MustDecode(account.accountHex))
-		assert.Equal(t, common.HexToHash(account.intermediateRootHex), trie.Hash(), i)
+	updateTC(trie1, tc, 0)
+	updateTC(trie1, tc, 1)
+	getTC(trie1, tc, 0)
+	getTC(trie1, tc, 1)
+
+	trie1.Commit(t) // testing commit in the middle
+
+	updateTC(trie1, tc, 2)
+	getTC(trie1, tc, 0)
+	getTC(trie1, tc, 1)
+	getTC(trie1, tc, 2)
+
+	trie1.Commit(t)
+
+	// Open second trie
+	trie2 := &kaiaTrie{
+		dbm:             dbm,
+		root:            common.BytesToHash(commitment.EmptyRootHash),
+		pendingAccounts: make(map[string][]byte),
+		pendingBranches: make(map[string][]byte),
 	}
 
-	// FlatTrie.Get()
-	for i, account := range tc {
-		val := trie.getAccount(t, hexutil.MustDecode(account.addressHex))
-		assert.Equal(t, val, hexutil.MustDecode(account.accountHex), i)
-	}
+	getTC(trie2, tc, 0)
+	getTC(trie2, tc, 1)
+	getTC(trie2, tc, 2)
+	updateTC(trie2, tc, 2)
 }

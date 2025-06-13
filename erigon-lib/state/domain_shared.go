@@ -1028,7 +1028,6 @@ func (sdc *SharedDomainsCommitmentContext) PutBranch(prefix []byte, data []byte,
 }
 
 func (sdc *SharedDomainsCommitmentContext) readAccount(plainKey []byte) (encAccount []byte, err error) {
-
 	if sdc.limitReadAsOfTxNum > 0 { // read not from latest
 		if sdc.domainsOnly { // read from previous files
 			encAccount, _, err = sdc.sharedDomains.getAsOfFile(kv.AccountsDomain, plainKey, nil, sdc.limitReadAsOfTxNum)
