@@ -236,6 +236,25 @@ func (trie *kaiaTrie) getInjectedTrie(sd *SharedDomains) (*SharedDomainsCommitme
 	return sdCtx, hph
 }
 
+func (trie *kaiaTrie) getAccount(t *testing.T, key []byte) []byte {
+	trie.mu.RLock()
+	defer trie.mu.RUnlock()
+
+	if val, ok := trie.pendingAccounts[string(key)]; ok {
+		return val
+	}
+
+	var result []byte
+	trie.dbm.WithTx(t, func(sd *SharedDomains) bool {
+		val, _, err := sd.GetLatest(kv.AccountsDomain, key)
+		if err == nil {
+			result = val
+		}
+		return false
+	})
+	return result
+}
+
 func (trie *kaiaTrie) updateAccount(t *testing.T, key, val []byte) {
 	trie.mu.Lock()
 	defer trie.mu.Unlock()
@@ -263,6 +282,15 @@ func (trie *kaiaTrie) Hash() common.Hash {
 	return trie.root
 }
 
+func (trie *kaiaTrie) Commit(t *testing.T) { // TODO-Kaia: return hash, err
+	trie.mu.Lock()
+	defer trie.mu.Unlock()
+
+	trie.dbm.WithTx(t, func(sd *SharedDomains) bool {
+		return false
+	})
+}
+
 func TestKaiaTrie(t *testing.T) {
 	dirs := datadir.New(t.TempDir()) // TODO-Kaia: use $DATADIR/klay/chaindata/flattrie
 	os.MkdirAll(dirs.Chaindata, 0755)
@@ -278,6 +306,7 @@ func TestKaiaTrie(t *testing.T) {
 		{"0xb74ff9dea397fe9e231df545eb53fe2adf776cb2", "0x01cd8088853a0d2313c000008001c0", "0x60e8f25e2fb479e625347c1f11e2f07c9cd7d0a5320013294d89281b6fceed4f"},
 	}
 
+	// Open first trie
 	trie := &kaiaTrie{
 		dbm:             dbm,
 		root:            common.BytesToHash(commitment.EmptyRootHash),
@@ -289,5 +318,11 @@ func TestKaiaTrie(t *testing.T) {
 	for i, account := range tc {
 		trie.updateAccount(t, hexutil.MustDecode(account.addressHex), hexutil.MustDecode(account.accountHex))
 		assert.Equal(t, common.HexToHash(account.intermediateRootHex), trie.Hash(), i)
+	}
+
+	// FlatTrie.Get()
+	for i, account := range tc {
+		val := trie.getAccount(t, hexutil.MustDecode(account.addressHex))
+		assert.Equal(t, val, hexutil.MustDecode(account.accountHex), i)
 	}
 }
