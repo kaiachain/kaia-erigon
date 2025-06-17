@@ -648,9 +648,11 @@ func DeserialiseV3(a *Account, enc []byte) error {
 		copy(a.CodeHash[:], enc[pos:pos+codeHashBytes])
 		pos += codeHashBytes
 	}
-	if pos >= len(enc) {
+	// Removing this check, because it may be Kaia-encoded account and we distinguish it by panic.
+	// So instead of returning error, make it panic.
+	/*if pos >= len(enc) {
 		return fmt.Errorf("deserialse2: %d >= %d ", pos, len(enc))
-	}
+	}*/
 	incBytes := int(enc[pos])
 	pos++
 	if incBytes > 0 {
