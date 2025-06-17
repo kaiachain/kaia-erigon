@@ -213,6 +213,9 @@ func (sd *SharedDomains) Unwind(ctx context.Context, rwTx kv.RwTx, blockUnwindTo
 }
 
 func (sd *SharedDomains) rebuildCommitment(ctx context.Context, roTx kv.Tx, blockNum uint64) ([]byte, error) {
+	/////////////////////////////
+	// TODO-Kaia: check if this is correct. Shouldn't this be kv.AccountsDomain?
+	/////////////////////////////
 	it, err := sd.aggTx.HistoryRange(kv.StorageDomain, int(sd.TxNum()), math.MaxInt64, order.Asc, -1, roTx)
 	if err != nil {
 		return nil, err
@@ -323,7 +326,9 @@ func (sd *SharedDomains) SeekCommitment(ctx context.Context, tx kv.Tx) (txsFromB
 		return 0, err
 	}
 	if ok {
-		if bn > 0 {
+		// TODO-Kaia: We're not updating `kv.MaxTxNum` so we always get 0 for lastBn.
+		/*if bn > 0 {
+			fmt.Printf("SeekCommitment: bn at %d and txn at %d\n", bn, txn)
 			lastBn, _, err := rawdbv3.TxNums.Last(tx)
 			if err != nil {
 				return 0, err
@@ -331,7 +336,7 @@ func (sd *SharedDomains) SeekCommitment(ctx context.Context, tx kv.Tx) (txsFromB
 			if lastBn < bn {
 				return 0, errors.WithMessage(ErrBehindCommitment, fmt.Sprintf("TxNums index is at block %d and behind commitment %d", lastBn, bn))
 			}
-		}
+		}*/
 		sd.SetBlockNum(bn)
 		sd.SetTxNum(txn)
 		return 0, nil
