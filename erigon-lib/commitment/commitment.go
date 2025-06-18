@@ -1089,17 +1089,22 @@ func (t *Updates) TouchAccount(c *KeyUpdate, val []byte) {
 	}
 }
 
+type AccountDeserialiseMode uint8
+
+const (
+	AccountDeserialiseModeErigonV3 AccountDeserialiseMode = iota
+	AccountDeserialiseModeKaia
+)
+
+var CurrentAccountDeserialiseMode = AccountDeserialiseModeErigonV3
+
 // TODO: Verify Kaia RLP format, return (nil, true) for Kaia / (err, false) for malformed data.
 func DeserialiseV3Safe(acc *accounts.Account, val []byte) (err error, isKaia bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = nil
-			isKaia = true
-		}
-	}()
-	err = accounts.DeserialiseV3(acc, val)
-	isKaia = false
-	return
+	if CurrentAccountDeserialiseMode == AccountDeserialiseModeKaia {
+		return nil, true
+	} else {
+		return accounts.DeserialiseV3(acc, val), false
+	}
 }
 
 func (t *Updates) TouchStorage(c *KeyUpdate, val []byte) {

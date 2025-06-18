@@ -54,11 +54,16 @@ return
 */
 
 func TestKaia_RootHash(t *testing.T) {
+	defer func() {
+		CurrentAccountDeserialiseMode = AccountDeserialiseModeErigonV3
+	}()
 	testcases := []struct {
+		mode     AccountDeserialiseMode
 		accounts accountsTC
 		hash     common.Hash
 	}{
 		{ // Kairos block #1 state, ErigonV3 encoding
+			AccountDeserialiseModeErigonV3,
 			accountsTC{
 				{"0x0000000000000000000000000000000000000400", "0x0000206c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0900"},
 				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x0015446c3b15f9926687d2c40534fdb5640000000000000000"},
@@ -67,12 +72,14 @@ func TestKaia_RootHash(t *testing.T) {
 			common.HexToHash("0x2e3360035cfdedcf87082405607284572e3df196954133ea713c343c9bc80d73"),
 		},
 		{ // Kairos block #1 state, Kaia RLP encoding / incremental (1/3)
+			AccountDeserialiseModeKaia,
 			accountsTC{
 				{"0x0000000000000000000000000000000000000400", "0x02f849c580808003c0a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a06c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0980"},
 			},
 			common.HexToHash("0xfbf14f63f97468e460a42b309bbad44fdc682ab3a7f95fa5d3508c9cf0009946"),
 		},
 		{ // Kairos block #1 state, Kaia RLP encoding / incremental (2/3)
+			AccountDeserialiseModeKaia,
 			accountsTC{
 				{"0x0000000000000000000000000000000000000400", "0x02f849c580808003c0a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a06c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0980"},
 				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x01da8095446c3b15f9926687d2c40534fdb5640000000000008001c0"},
@@ -80,6 +87,7 @@ func TestKaia_RootHash(t *testing.T) {
 			common.HexToHash("0xbe751ffacf5fcf9998d4f90b87164ff95166d55e445c8d27cfecbe0e67a032b6"),
 		},
 		{ // Kairos block #1 state, Kaia RLP encoding / incremental (3/3)
+			AccountDeserialiseModeKaia,
 			accountsTC{
 				{"0x0000000000000000000000000000000000000400", "0x02f849c580808003c0a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a06c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0980"},
 				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x01da8095446c3b15f9926687d2c40534fdb5640000000000008001c0"},
@@ -88,6 +96,7 @@ func TestKaia_RootHash(t *testing.T) {
 			common.HexToHash("0x60e8f25e2fb479e625347c1f11e2f07c9cd7d0a5320013294d89281b6fceed4f"),
 		},
 		{
+			AccountDeserialiseModeKaia,
 			accountsTC{
 				{"0xd293f7799bd6c75b82c2802542e2999c14f47e35", "0x01c580648001c0"},
 				{"0xebbbacfb87fbfdec9011cfad2462782b3f8a8d88", "0x01c564808001c0"},
@@ -105,6 +114,7 @@ func TestKaia_RootHash(t *testing.T) {
 	}
 
 	for i, tc := range testcases {
+		CurrentAccountDeserialiseMode = tc.mode
 		upd := NewUpdates(ModeUpdate, t.TempDir(), KeyToHexNibbleHash)
 		for _, account := range tc.accounts {
 			upd.TouchPlainKey(string(hexutil.MustDecode(account.addressHex)), hexutil.MustDecode(account.accountHex), upd.TouchAccount)
@@ -122,11 +132,17 @@ func TestKaia_RootHash(t *testing.T) {
 }
 
 func TestKaia_RestoreState(t *testing.T) {
+	defer func() {
+		CurrentAccountDeserialiseMode = AccountDeserialiseModeErigonV3
+	}()
+
 	testcases := []struct {
+		mode     AccountDeserialiseMode
 		accounts accountsTC
 		hash     common.Hash
 	}{
 		{ // Kairos block #1 state, ErigonV3 encoding
+			AccountDeserialiseModeErigonV3,
 			accountsTC{
 				{"0x0000000000000000000000000000000000000400", "0x0000206c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0900"},
 				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x0015446c3b15f9926687d2c40534fdb5640000000000000000"},
@@ -135,6 +151,7 @@ func TestKaia_RestoreState(t *testing.T) {
 			common.HexToHash("0x2e3360035cfdedcf87082405607284572e3df196954133ea713c343c9bc80d73"),
 		},
 		{ // Kairos block #1 state, Kaia RLP encoding / incremental (3/3)
+			AccountDeserialiseModeKaia,
 			accountsTC{
 				{"0x0000000000000000000000000000000000000400", "0x02f849c580808003c0a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a06c39846f5ab402760078b7bfd16c99e687c75bcb5ec65ac8f3054bad18136f0980"},
 				{"0x4937a6f664630547f6b0c3c235c4f03a64ca36b1", "0x01da8095446c3b15f9926687d2c40534fdb5640000000000008001c0"},
@@ -145,6 +162,7 @@ func TestKaia_RestoreState(t *testing.T) {
 	}
 
 	for i, tc := range testcases {
+		CurrentAccountDeserialiseMode = tc.mode
 		upd := NewUpdates(ModeUpdate, t.TempDir(), KeyToHexNibbleHash)
 		for _, account := range tc.accounts {
 			upd.TouchPlainKey(string(hexutil.MustDecode(account.addressHex)), hexutil.MustDecode(account.accountHex), upd.TouchAccount)

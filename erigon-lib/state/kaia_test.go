@@ -302,6 +302,8 @@ func (trie *kaiaTrie) Commit(t *testing.T) { // TODO-Kaia: return hash, err
 }
 
 func TestKaiaTrie(t *testing.T) {
+	commitment.CurrentAccountDeserialiseMode = commitment.AccountDeserialiseModeKaia
+
 	dirs := datadir.New(t.TempDir()) // TODO-Kaia: use $DATADIR/klay/chaindata/flattrie
 	os.MkdirAll(dirs.Chaindata, 0755)
 	fmt.Printf("dirs.Chaindata: %s\n", dirs.Chaindata)
