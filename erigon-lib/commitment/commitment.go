@@ -1096,7 +1096,7 @@ const (
 	AccountDeserialiseModeKaia
 )
 
-var CurrentAccountDeserialiseMode = AccountDeserialiseModeErigonV3
+var CurrentAccountDeserialiseMode = AccountDeserialiseModeKaia
 
 // TODO: Verify Kaia RLP format, return (nil, true) for Kaia / (err, false) for malformed data.
 func DeserialiseV3Safe(acc *accounts.Account, val []byte) (err error, isKaia bool) {
