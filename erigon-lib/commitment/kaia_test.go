@@ -19,6 +19,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/erigontech/erigon-lib/common"
 	"github.com/erigontech/erigon-lib/common/hexutil"
 	"github.com/erigontech/erigon-lib/common/length"
@@ -191,4 +192,64 @@ func TestKaia_RestoreState(t *testing.T) {
 		require.NoError(t, err, i)
 		assert.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash2).Hex(), i)
 	}
+}
+
+func TestKaia_StorageRootHash1(t *testing.T) {
+	defer func() {
+		CurrentAccountDeserialiseMode = AccountDeserialiseModeErigonV3
+	}()
+	CurrentAccountDeserialiseMode = AccountDeserialiseModeKaia
+
+	addr := common.HexToAddress("0x9fdd7a341308e969527bd6c928068edee8399807").Bytes()
+	_ = addr
+	slot := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000005").Bytes()
+	val := common.HexToHash("95efef9fe22a5e1ae68baea7069dcb1ac607ed78cf12").Bytes()
+	composite := make([]byte, 0)
+	composite = append(append(composite, addr...), slot...)
+
+	upd := NewUpdates(ModeUpdate, t.TempDir(), KeyToHexNibbleHash)
+	upd.TouchPlainKey(string(composite), val, upd.TouchStorage)
+
+	ctx := context.Background()
+	ms := NewMockState(t)
+	hph := NewHexPatriciaHashed(length.Hash, ms, ms.TempDir())
+	hph.SetTrace(testing.Verbose())
+	rootHash, err := hph.Process(ctx, upd, "")
+	require.NoError(t, err)
+	assert.Equal(t, common.HexToHash("0a89b4cfdf2b21fba08a6d57e4c2c598e6e630a6ef6902e44e602fbffdb066ec").Bytes(), rootHash)
+
+	spew.Dump(hph.root)
+	/*
+		require.NoError(t, err, i)
+		assert.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash).Hex(), i)
+	*/
+}
+
+func TestKaia_StorageRootHash2(t *testing.T) {
+	defer func() {
+		CurrentAccountDeserialiseMode = AccountDeserialiseModeErigonV3
+	}()
+	CurrentAccountDeserialiseMode = AccountDeserialiseModeKaia
+
+	addr := common.HexToAddress("0x9fdd7a341308e969527bd6c928068edee8399807").Bytes()
+	_ = addr
+	slot := common.HexToHash("0000000000000000000000000000000000000000000000000000000000000005").Bytes()
+	val := common.HexToHash("95efef9fe22a5e1ae68baea7069dcb1ac607ed78cf12").Bytes()
+
+	upd := NewUpdates(ModeUpdate, t.TempDir(), KeyToHexNibbleHash)
+	upd.TouchPlainKey(string(slot), val, upd.TouchAccount)
+
+	ctx := context.Background()
+	ms := NewMockState(t)
+	hph := NewHexPatriciaHashed(length.Hash, ms, ms.TempDir())
+	hph.SetTrace(testing.Verbose())
+	rootHash, err := hph.Process(ctx, upd, "")
+	require.NoError(t, err)
+	assert.Equal(t, common.HexToHash("0a89b4cfdf2b21fba08a6d57e4c2c598e6e630a6ef6902e44e602fbffdb066ec").Bytes(), rootHash)
+
+	spew.Dump(hph.root)
+	/*
+		require.NoError(t, err, i)
+		assert.Equal(t, tc.hash.Hex(), common.BytesToHash(rootHash).Hex(), i)
+	*/
 }
