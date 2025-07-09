@@ -93,19 +93,23 @@ type HexPatriciaHashed struct {
 
 	memoizationOff bool // if true, do not rely on memoized hashes
 
+	// Map to store storage root hashes for each account
+	storageRootHashes map[string][length.Hash]byte
+
 	//temp buffers
 	accValBuf rlp.RlpEncodedBytes
 }
 
 func NewHexPatriciaHashed(accountKeyLen int, ctx PatriciaContext, tmpdir string) *HexPatriciaHashed {
 	hph := &HexPatriciaHashed{
-		ctx:           ctx,
-		keccak:        sha3.NewLegacyKeccak256().(keccakState),
-		keccak2:       sha3.NewLegacyKeccak256().(keccakState),
-		accountKeyLen: accountKeyLen,
-		auxBuffer:     bytes.NewBuffer(make([]byte, 8192)),
-		hadToLoadL:    make(map[uint64]skipStat),
-		accValBuf:     make(rlp.RlpEncodedBytes, 128),
+		ctx:               ctx,
+		keccak:            sha3.NewLegacyKeccak256().(keccakState),
+		keccak2:           sha3.NewLegacyKeccak256().(keccakState),
+		accountKeyLen:     accountKeyLen,
+		auxBuffer:         bytes.NewBuffer(make([]byte, 8192)),
+		hadToLoadL:        make(map[uint64]skipStat),
+		storageRootHashes: make(map[string][length.Hash]byte),
+		accValBuf:         make(rlp.RlpEncodedBytes, 128),
 	}
 	hph.branchEncoder = NewBranchEncoder(1024, filepath.Join(tmpdir, "branch-encoder"))
 	return hph
@@ -458,6 +462,9 @@ func readUvarint(data []byte) (uint64, int, error) {
 }
 
 func (cell *cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]byte) int {
+	if storageRootHash != [length.Hash]byte{} && storageRootHash != [32]byte(EmptyRootHash) {
+		fmt.Printf("accountForHashing: %x, %x\n", cell.accountAddr[:cell.accountAddrLen], storageRootHash)
+	}
 	// If RawBytes is present, the RawBytes is the account to be hashed.
 	if len(cell.RawBytes) > 0 {
 		if len(buffer) < len(cell.RawBytes) {
@@ -729,6 +736,10 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 	var err error
 	var storageRootHash [length.Hash]byte
 	var storageRootHashIsSet bool
+	defer func() {
+		fmt.Printf("computeCellHashWithStorage: accountaddr: %x, storageaddr: %x, storageRootHash: %x, storageRootHashIsSet: %t\n", cell.accountAddr[:cell.accountAddrLen], cell.storageAddr[:cell.storageAddrLen], storageRootHash, storageRootHashIsSet)
+		hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
+	}()
 	if cell.storageAddrLen > 0 {
 		var hashedKeyOffset int
 		if depth >= 64 {
@@ -758,6 +769,7 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 			} else {
 				storageRootHashIsSet = true
 				storageRootHash = *(*[length.Hash]byte)(res[1:])
+				//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 				//copy(storageRootHash[:], res[1:])
 				//cell.stateHashLen = 0
 			}
@@ -783,6 +795,7 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 				}
 				storageRootHash = *(*[length.Hash]byte)(aux[1:])
 				storageRootHashIsSet = true
+				//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 				cell.stateHashLen = 0
 				hadToReset.Add(1)
 			} else {
@@ -800,6 +813,7 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 					fmt.Printf("STATE HASH storage memoized %x spk %x\n", leafHash, cell.storageAddr[:cell.storageAddrLen])
 				}
 
+				//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 				return leafHash, storageRootHashIsSet, storageRootHash[:], nil
 			}
 		}
@@ -842,6 +856,7 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 				if hph.trace {
 					fmt.Printf("REUSED stateHash %x apk %x\n", res, cell.accountAddr[:cell.accountAddrLen])
 				}
+				//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 				return res, storageRootHashIsSet, storageRootHash[:], nil
 			}
 			// storage root update or extension update could invalidate older stateHash, so we need to reload state
@@ -853,6 +868,7 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 		}
 
 		var valBuf [128]byte
+		hph.storeStorageRootHash(cell, storageRootHash, true)
 		valLen := cell.accountForHashing(valBuf[:], storageRootHash)
 		if hph.trace {
 			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.hashedExtension[:65-depth], rlp.RlpEncodedBytes(valBuf[:valLen]))
@@ -866,6 +882,7 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 		}
 		copy(cell.stateHash[:], leafHash[1:])
 		cell.stateHashLen = len(leafHash) - 1
+		//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 		return leafHash, storageRootHashIsSet, storageRootHash[:], nil
 	}
 
@@ -892,6 +909,7 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 	} else {
 		buf = append(buf, EmptyRootHash...)
 	}
+	//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 	return buf, storageRootHashIsSet, storageRootHash[:], nil
 }
 
@@ -899,6 +917,10 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 	var err error
 	var storageRootHash [length.Hash]byte
 	var storageRootHashIsSet bool
+	defer func() {
+		fmt.Printf("computeCellHash: accountaddr: %x, storageaddr: %x, storageRootHash: %x, storageRootHashIsSet: %t\n", cell.accountAddr[:cell.accountAddrLen], cell.storageAddr[:cell.storageAddrLen], storageRootHash, storageRootHashIsSet)
+		hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
+	}()
 	if cell.storageAddrLen > 0 {
 		var hashedKeyOffset int
 		if depth >= 64 {
@@ -927,6 +949,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 			}
 			storageRootHashIsSet = true
 			storageRootHash = *(*[length.Hash]byte)(cell.stateHash[:cell.stateHashLen])
+			//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 		} else {
 			if !cell.loaded.storage() {
 				return nil, fmt.Errorf("storage %x was not loaded as expected: cell %v", cell.storageAddr[:cell.storageAddrLen], cell.String())
@@ -952,6 +975,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 			}
 			storageRootHash = *(*[length.Hash]byte)(leafHash[1:])
 			storageRootHashIsSet = true
+			//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 			cell.stateHashLen = 0
 			hadToReset.Add(1)
 		}
@@ -992,6 +1016,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 				if hph.trace {
 					fmt.Printf("REUSED stateHash %x apk %x\n", cell.stateHash[:cell.stateHashLen], cell.accountAddr[:cell.accountAddrLen])
 				}
+				//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 				return append(append(buf[:0], byte(160)), cell.stateHash[:cell.stateHashLen]...), nil
 			}
 			// storage root update or extension update could invalidate older stateHash, so we need to reload state
@@ -1002,6 +1027,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 			cell.setFromUpdate(update)
 		}
 
+		hph.storeStorageRootHash(cell, storageRootHash, true)
 		valLen := cell.accountForHashing(hph.accValBuf, storageRootHash)
 		buf, err = hph.accountLeafHashWithKey(buf, cell.hashedExtension[:65-depth], hph.accValBuf[:valLen])
 		if err != nil {
@@ -1012,6 +1038,10 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 		}
 		copy(cell.stateHash[:], buf[1:])
 		cell.stateHashLen = len(buf) - 1
+
+		// Store the storage root hash for this account
+		//hph.storeStorageRootHash(cell, storageRootHash, true)
+
 		return buf, nil
 	}
 
@@ -1037,6 +1067,7 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 	} else {
 		buf = append(buf, EmptyRootHash...)
 	}
+	//hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 	return buf, nil
 }
 
@@ -2171,6 +2202,7 @@ func (hph *HexPatriciaHashed) Reset() {
 	hph.rootTouched = false
 	hph.rootChecked = false
 	hph.rootPresent = true
+	hph.storageRootHashes = make(map[string][length.Hash]byte)
 }
 
 func (hph *HexPatriciaHashed) ResetContext(ctx PatriciaContext) {
@@ -2187,14 +2219,15 @@ var (
 
 // represents state of the tree
 type state struct {
-	Root         []byte      // encoded root cell
-	Depths       [128]int    // For each row, the depth of cells in that row
-	TouchMap     [128]uint16 // For each row, bitmap of cells that were either present before modification, or modified or deleted
-	AfterMap     [128]uint16 // For each row, bitmap of cells that were present after modification
-	BranchBefore [128]bool   // For each row, whether there was a branch node in the database loaded in unfold
-	RootChecked  bool        // Set to false if it is not known whether the root is empty, set to true if it is checked
-	RootTouched  bool
-	RootPresent  bool
+	Root              []byte                       // encoded root cell
+	Depths            [128]int                     // For each row, the depth of cells in that row
+	TouchMap          [128]uint16                  // For each row, bitmap of cells that were either present before modification, or modified or deleted
+	AfterMap          [128]uint16                  // For each row, bitmap of cells that were present after modification
+	BranchBefore      [128]bool                    // For each row, whether there was a branch node in the database loaded in unfold
+	StorageRootHashes map[string][length.Hash]byte // Storage root hashes for each account
+	RootChecked       bool                         // Set to false if it is not known whether the root is empty, set to true if it is checked
+	RootTouched       bool
+	RootPresent       bool
 }
 
 func (s *state) Encode(buf []byte) ([]byte, error) {
@@ -2250,6 +2283,23 @@ func (s *state) Encode(buf []byte) ([]byte, error) {
 	if err := binary.Write(ee, binary.BigEndian, before2); err != nil {
 		return nil, fmt.Errorf("encode branchBefore_2: %w", err)
 	}
+
+	// Encode storage root hashes
+	if err := binary.Write(ee, binary.BigEndian, uint32(len(s.StorageRootHashes))); err != nil {
+		return nil, fmt.Errorf("encode storageRootHashes count: %w", err)
+	}
+	for accountKey, rootHash := range s.StorageRootHashes {
+		if err := binary.Write(ee, binary.BigEndian, uint16(len(accountKey))); err != nil {
+			return nil, fmt.Errorf("encode account key length: %w", err)
+		}
+		if n, err := ee.Write([]byte(accountKey)); err != nil || n != len(accountKey) {
+			return nil, fmt.Errorf("encode account key: %w", err)
+		}
+		if n, err := ee.Write(rootHash[:]); err != nil || n != length.Hash {
+			return nil, fmt.Errorf("encode storage root hash: %w", err)
+		}
+	}
+
 	return ee.Bytes(), nil
 }
 
@@ -2309,6 +2359,36 @@ func (s *state) Decode(buf []byte) error {
 			s.BranchBefore[i] = true
 		}
 	}
+
+	// Decode storage root hashes (optional section for backward compatibility)
+	var storageRootHashCount uint32
+	if err := binary.Read(aux, binary.BigEndian, &storageRootHashCount); err != nil {
+		// If we can't read the storage root hash count, this might be old format data
+		// Initialize empty map and continue - this maintains backward compatibility
+		s.StorageRootHashes = make(map[string][length.Hash]byte)
+		return nil
+	}
+
+	s.StorageRootHashes = make(map[string][length.Hash]byte, storageRootHashCount)
+	for i := uint32(0); i < storageRootHashCount; i++ {
+		var keyLen uint16
+		if err := binary.Read(aux, binary.BigEndian, &keyLen); err != nil {
+			return fmt.Errorf("account key length: %w", err)
+		}
+
+		keyBytes := make([]byte, keyLen)
+		if _, err := aux.Read(keyBytes); err != nil {
+			return fmt.Errorf("account key: %w", err)
+		}
+
+		var rootHash [length.Hash]byte
+		if _, err := aux.Read(rootHash[:]); err != nil {
+			return fmt.Errorf("storage root hash: %w", err)
+		}
+
+		s.StorageRootHashes[string(keyBytes)] = rootHash
+	}
+
 	return nil
 }
 
@@ -2419,9 +2499,10 @@ func (cell *cell) Decode(buf []byte) error {
 // Encode current state of hph into bytes
 func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 	s := state{
-		RootChecked: hph.rootChecked,
-		RootTouched: hph.rootTouched,
-		RootPresent: hph.rootPresent,
+		RootChecked:       hph.rootChecked,
+		RootTouched:       hph.rootTouched,
+		RootPresent:       hph.rootPresent,
+		StorageRootHashes: make(map[string][length.Hash]byte),
 	}
 	if hph.currentKeyLen > 0 {
 		panic("currentKeyLen > 0")
@@ -2432,6 +2513,11 @@ func (hph *HexPatriciaHashed) EncodeCurrentState(buf []byte) ([]byte, error) {
 	copy(s.BranchBefore[:], hph.branchBefore[:])
 	copy(s.TouchMap[:], hph.touchMap[:])
 	copy(s.AfterMap[:], hph.afterMap[:])
+
+	// Copy storage root hashes
+	for accountKey, rootHash := range hph.storageRootHashes {
+		s.StorageRootHashes[accountKey] = rootHash
+	}
 
 	return s.Encode(buf)
 }
@@ -2447,6 +2533,7 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 		hph.rootTouched = false
 		hph.rootPresent = false
 		hph.activeRows = 0
+		hph.storageRootHashes = make(map[string][length.Hash]byte)
 
 		for i := 0; i < len(hph.depths); i++ {
 			hph.depths[i] = 0
@@ -2476,6 +2563,12 @@ func (hph *HexPatriciaHashed) SetState(buf []byte) error {
 	copy(hph.branchBefore[:], s.BranchBefore[:])
 	copy(hph.touchMap[:], s.TouchMap[:])
 	copy(hph.afterMap[:], s.AfterMap[:])
+
+	// Restore storage root hashes
+	hph.storageRootHashes = make(map[string][length.Hash]byte)
+	for accountKey, rootHash := range s.StorageRootHashes {
+		hph.storageRootHashes[accountKey] = rootHash
+	}
 
 	if hph.root.accountAddrLen > 0 {
 		if hph.ctx == nil {
@@ -2569,6 +2662,10 @@ func HexTrieStateToString(enc []byte) (string, error) {
 	}
 
 	fmt.Fprintf(sb, "RootHash: %x\n", root.hash)
+	fmt.Fprintf(sb, "StorageRootHashes: %d entries\n", len(s.StorageRootHashes))
+	for accountKey, rootHash := range s.StorageRootHashes {
+		fmt.Fprintf(sb, "  Account %x: Storage root %x\n", []byte(accountKey), rootHash)
+	}
 	printAfterMap(sb, "afterMap", s.AfterMap[:], s.Depths[:], s.BranchBefore[:])
 
 	return sb.String(), nil
@@ -2587,5 +2684,40 @@ func (hph *HexPatriciaHashed) PrintAccountsInGrid() {
 				fmt.Printf("FOUND account %x in position (%d,%d)\n", c.accountAddr, row, col)
 			}
 		}
+	}
+}
+
+// GetStorageRootHash returns the storage root hash for a specific account
+func (hph *HexPatriciaHashed) GetStorageRootHash(accountAddr []byte) ([length.Hash]byte, bool) {
+	accountKey := string(accountAddr)
+	rootHash, exists := hph.storageRootHashes[accountKey]
+	return rootHash, exists
+}
+
+// GetAllStorageRootHashes returns all storage root hashes
+func (hph *HexPatriciaHashed) GetAllStorageRootHashes() map[string][length.Hash]byte {
+	// Return a copy to prevent external modification
+	result := make(map[string][length.Hash]byte)
+	for k, v := range hph.storageRootHashes {
+		result[k] = v
+	}
+	return result
+}
+
+// ClearStorageRootHashes clears all stored storage root hashes
+func (hph *HexPatriciaHashed) ClearStorageRootHashes() {
+	hph.storageRootHashes = make(map[string][length.Hash]byte)
+}
+
+// storeStorageRootHash stores the storage root hash for the given cell if it has an account address
+func (hph *HexPatriciaHashed) storeStorageRootHash(cell *cell, storageRootHash [length.Hash]byte, storageRootHashIsSet bool) {
+	if storageRootHashIsSet && (cell.storageAddrLen > 0 || cell.accountAddrLen > 0) {
+		var accountKey string
+		if cell.storageAddrLen > 0 {
+			accountKey = string(cell.storageAddr[:length.Addr])
+		} else {
+			accountKey = string(cell.accountAddr[:cell.accountAddrLen])
+		}
+		hph.storageRootHashes[accountKey] = storageRootHash
 	}
 }

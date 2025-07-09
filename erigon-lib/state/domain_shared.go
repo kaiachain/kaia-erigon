@@ -728,6 +728,16 @@ func (sd *SharedDomains) ComputeCommitment(ctx context.Context, saveStateAfter b
 	return
 }
 
+// GetStorageRootHash returns the storage root hash for a specific account
+func (sd *SharedDomains) GetStorageRootHash(accountAddr []byte) ([32]byte, bool) {
+	return sd.sdCtx.GetStorageRootHash(accountAddr)
+}
+
+// GetAllStorageRootHashes returns all storage root hashes
+func (sd *SharedDomains) GetAllStorageRootHashes() map[string][32]byte {
+	return sd.sdCtx.GetAllStorageRootHashes()
+}
+
 // IterateStoragePrefix iterates over key-value pairs of the storage domain that start with given prefix
 // Such iteration is not intended to be used in public API, therefore it uses read-write transaction
 // inside the domain. Another version of this for public API use needs to be created, that uses
@@ -995,6 +1005,7 @@ func (sdc *SharedDomainsCommitmentContext) Close() {
 }
 
 func (sdc *SharedDomainsCommitmentContext) Branch(pref []byte) ([]byte, uint64, error) {
+	fmt.Printf("Branch: key: %x\n", pref)
 	if !sdc.domainsOnly && sdc.limitReadAsOfTxNum > 0 {
 		branch, _, err := sdc.sharedDomains.aggTx.GetAsOf(sdc.sharedDomains.roTx, kv.CommitmentDomain, pref, sdc.limitReadAsOfTxNum)
 		if sdc.sharedDomains.trace {
@@ -1022,6 +1033,7 @@ func (sdc *SharedDomainsCommitmentContext) Branch(pref []byte) ([]byte, uint64, 
 }
 
 func (sdc *SharedDomainsCommitmentContext) PutBranch(prefix []byte, data []byte, prevData []byte, prevStep uint64) error {
+	fmt.Printf("PutBranch: key: %x, data: %x, prevData: %x, prevStep: %d\n", prefix, data, prevData, prevStep)
 	if sdc.limitReadAsOfTxNum > 0 && !sdc.domainsOnly { // do not store branches if explicitly operate on history
 		return nil
 	}
@@ -1083,6 +1095,7 @@ func (sdc *SharedDomainsCommitmentContext) readStorage(plainKey []byte) (enc []b
 }
 
 func (sdc *SharedDomainsCommitmentContext) Account(plainKey []byte) (u *commitment.Update, err error) {
+	fmt.Printf("Account: key: %x\n", plainKey)
 	encAccount, err := sdc.readAccount(plainKey)
 	if err != nil {
 		return nil, err
@@ -1135,6 +1148,7 @@ func (sdc *SharedDomainsCommitmentContext) Account(plainKey []byte) (u *commitme
 }
 
 func (sdc *SharedDomainsCommitmentContext) Storage(plainKey []byte) (u *commitment.Update, err error) {
+	fmt.Printf("Storage: key: %x\n", plainKey)
 	enc, err := sdc.readStorage(plainKey)
 	if err != nil {
 		return nil, err
@@ -1195,6 +1209,24 @@ func (sdc *SharedDomainsCommitmentContext) Witness(ctx context.Context, expected
 	}
 
 	return nil, nil, errors.New("shared domains commitment context doesn't have HexPatriciaHashed")
+}
+
+// GetStorageRootHash returns the storage root hash for a specific account
+func (sdc *SharedDomainsCommitmentContext) GetStorageRootHash(accountAddr []byte) ([32]byte, bool) {
+	hexPatriciaHashed, ok := sdc.Trie().(*commitment.HexPatriciaHashed)
+	if !ok {
+		return [32]byte{}, false
+	}
+	return hexPatriciaHashed.GetStorageRootHash(accountAddr)
+}
+
+// GetAllStorageRootHashes returns all storage root hashes
+func (sdc *SharedDomainsCommitmentContext) GetAllStorageRootHashes() map[string][32]byte {
+	hexPatriciaHashed, ok := sdc.Trie().(*commitment.HexPatriciaHashed)
+	if !ok {
+		return make(map[string][32]byte)
+	}
+	return hexPatriciaHashed.GetAllStorageRootHashes()
 }
 
 // Evaluates commitment for processed state.
