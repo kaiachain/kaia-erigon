@@ -737,7 +737,6 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 	var storageRootHash [length.Hash]byte
 	var storageRootHashIsSet bool
 	defer func() {
-		fmt.Printf("computeCellHashWithStorage: accountaddr: %x, storageaddr: %x, storageRootHash: %x, storageRootHashIsSet: %t\n", cell.accountAddr[:cell.accountAddrLen], cell.storageAddr[:cell.storageAddrLen], storageRootHash, storageRootHashIsSet)
 		hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 	}()
 	if cell.storageAddrLen > 0 {
@@ -918,7 +917,6 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 	var storageRootHash [length.Hash]byte
 	var storageRootHashIsSet bool
 	defer func() {
-		fmt.Printf("computeCellHash: accountaddr: %x, storageaddr: %x, storageRootHash: %x, storageRootHashIsSet: %t\n", cell.accountAddr[:cell.accountAddrLen], cell.storageAddr[:cell.storageAddrLen], storageRootHash, storageRootHashIsSet)
 		hph.storeStorageRootHash(cell, storageRootHash, storageRootHashIsSet)
 	}()
 	if cell.storageAddrLen > 0 {

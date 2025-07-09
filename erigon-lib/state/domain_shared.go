@@ -1005,7 +1005,6 @@ func (sdc *SharedDomainsCommitmentContext) Close() {
 }
 
 func (sdc *SharedDomainsCommitmentContext) Branch(pref []byte) ([]byte, uint64, error) {
-	fmt.Printf("Branch: key: %x\n", pref)
 	if !sdc.domainsOnly && sdc.limitReadAsOfTxNum > 0 {
 		branch, _, err := sdc.sharedDomains.aggTx.GetAsOf(sdc.sharedDomains.roTx, kv.CommitmentDomain, pref, sdc.limitReadAsOfTxNum)
 		if sdc.sharedDomains.trace {
@@ -1033,7 +1032,6 @@ func (sdc *SharedDomainsCommitmentContext) Branch(pref []byte) ([]byte, uint64, 
 }
 
 func (sdc *SharedDomainsCommitmentContext) PutBranch(prefix []byte, data []byte, prevData []byte, prevStep uint64) error {
-	fmt.Printf("PutBranch: key: %x, data: %x, prevData: %x, prevStep: %d\n", prefix, data, prevData, prevStep)
 	if sdc.limitReadAsOfTxNum > 0 && !sdc.domainsOnly { // do not store branches if explicitly operate on history
 		return nil
 	}
@@ -1095,7 +1093,6 @@ func (sdc *SharedDomainsCommitmentContext) readStorage(plainKey []byte) (enc []b
 }
 
 func (sdc *SharedDomainsCommitmentContext) Account(plainKey []byte) (u *commitment.Update, err error) {
-	fmt.Printf("Account: key: %x\n", plainKey)
 	encAccount, err := sdc.readAccount(plainKey)
 	if err != nil {
 		return nil, err
@@ -1148,7 +1145,6 @@ func (sdc *SharedDomainsCommitmentContext) Account(plainKey []byte) (u *commitme
 }
 
 func (sdc *SharedDomainsCommitmentContext) Storage(plainKey []byte) (u *commitment.Update, err error) {
-	fmt.Printf("Storage: key: %x\n", plainKey)
 	enc, err := sdc.readStorage(plainKey)
 	if err != nil {
 		return nil, err
