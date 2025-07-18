@@ -237,6 +237,9 @@ func (cell *cell) FullString() string {
 	if cell.hashedExtLen > 0 {
 		b.WriteString(fmt.Sprintf("hashedExtension=%x ", cell.hashedExtension[:cell.hashedExtLen]))
 	}
+	if len(cell.RawBytes) > 0 {
+		b.WriteString(fmt.Sprintf("rawBytes=%x ", cell.RawBytes[:]))
+	}
 
 	b.WriteString("}")
 	return b.String()
@@ -461,17 +464,20 @@ func readUvarint(data []byte) (uint64, int, error) {
 	return l, n, nil
 }
 
-func (cell *cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]byte) int {
+func (cell *cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]byte) ([]byte, int) {
 	if storageRootHash != [length.Hash]byte{} && storageRootHash != [32]byte(EmptyRootHash) {
 		fmt.Printf("accountForHashing: %x, %x\n", cell.accountAddr[:cell.accountAddrLen], storageRootHash)
 	}
 	// If RawBytes is present, the RawBytes is the account to be hashed.
 	if len(cell.RawBytes) > 0 {
 		if len(buffer) < len(cell.RawBytes) {
+			fmt.Printf("len(buffer) %d < len(cell.RawBytes) %d\n", len(buffer), len(cell.RawBytes))
 			buffer = make([]byte, len(cell.RawBytes))
 		}
+		//fmt.Printf("buffer %x\n", buffer)
 		copy(buffer[:], cell.RawBytes[:])
-		return len(cell.RawBytes)
+
+		return buffer, len(cell.RawBytes)
 	}
 
 	balanceBytes := 0
@@ -538,7 +544,7 @@ func (cell *cell) accountForHashing(buffer []byte, storageRootHash [length.Hash]
 	pos++
 	copy(buffer[pos:], cell.CodeHash[:])
 	pos += 32
-	return pos
+	return buffer, pos
 }
 
 func (hph *HexPatriciaHashed) completeLeafHash(buf []byte, compactLen int, key []byte, compact0 byte, ni int, val rlp.RlpSerializable, singleton bool) ([]byte, error) {
@@ -639,6 +645,7 @@ func (hph *HexPatriciaHashed) accountLeafHashWithKey(buf, key []byte, val rlp.Rl
 }
 
 func (hph *HexPatriciaHashed) extensionHash(key []byte, hash []byte) ([length.Hash]byte, error) {
+	fmt.Printf("extensionHash: key: %x, hash: %x\n", key, hash)
 	var hashBuf [length.Hash]byte
 
 	// Compute the total length of binary representation
@@ -866,9 +873,11 @@ func (hph *HexPatriciaHashed) computeCellHashWithStorage(cell *cell, depth int, 
 			cell.setFromUpdate(update)
 		}
 
-		var valBuf [128]byte
+		//var valBuf [128]byte
+		var valBuf []byte
+		var valLen int
 		hph.storeStorageRootHash(cell, storageRootHash, true)
-		valLen := cell.accountForHashing(valBuf[:], storageRootHash)
+		valBuf, valLen = cell.accountForHashing(valBuf, storageRootHash)
 		if hph.trace {
 			fmt.Printf("accountLeafHashWithKey for [%x]=>[%x]\n", cell.hashedExtension[:65-depth], rlp.RlpEncodedBytes(valBuf[:valLen]))
 		}
@@ -1026,7 +1035,10 @@ func (hph *HexPatriciaHashed) computeCellHash(cell *cell, depth int, buf []byte)
 		}
 
 		hph.storeStorageRootHash(cell, storageRootHash, true)
-		valLen := cell.accountForHashing(hph.accValBuf, storageRootHash)
+		var valLen int
+		hph.accValBuf, valLen = cell.accountForHashing(hph.accValBuf, storageRootHash)
+		fmt.Printf("accountLeafHashWithKey accValBuf %x, valLen %d\n", hph.accValBuf, valLen)
+		fmt.Printf("cell: %v\n", cell.FullString())
 		buf, err = hph.accountLeafHashWithKey(buf, cell.hashedExtension[:65-depth], hph.accValBuf[:valLen])
 		if err != nil {
 			return nil, err
@@ -2709,6 +2721,7 @@ func (hph *HexPatriciaHashed) ClearStorageRootHashes() {
 
 // storeStorageRootHash stores the storage root hash for the given cell if it has an account address
 func (hph *HexPatriciaHashed) storeStorageRootHash(cell *cell, storageRootHash [length.Hash]byte, storageRootHashIsSet bool) {
+	// TODO-Kaia: do not store empty root hashes, e.g., && (storageRootHash != [length.Hash]byte{} || storageRootHash != trie.EmptyRoot)
 	if storageRootHashIsSet && (cell.storageAddrLen > 0 || cell.accountAddrLen > 0) {
 		var accountKey string
 		if cell.storageAddrLen > 0 {
@@ -2716,6 +2729,7 @@ func (hph *HexPatriciaHashed) storeStorageRootHash(cell *cell, storageRootHash [
 		} else {
 			accountKey = string(cell.accountAddr[:cell.accountAddrLen])
 		}
+		fmt.Printf("storing storage root hash for account %x: %x\n", accountKey, storageRootHash)
 		hph.storageRootHashes[accountKey] = storageRootHash
 	}
 }

@@ -3,9 +3,10 @@ package commitment
 import (
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/erigontech/erigon-lib/common/length"
 	ecrypto "github.com/erigontech/erigon-lib/crypto"
-	"strings"
 )
 
 // KeyToHexNibbleHash hashes plain key with respect to plain key size (part < 20 bytes for account, part >= 20 bytes for storage)
