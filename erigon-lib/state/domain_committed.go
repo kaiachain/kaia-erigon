@@ -74,6 +74,21 @@ func (cs *commitmentState) Encode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Exported for kaiatrie.DeferredContext.
+func EncodeCommitmentState(txNum, blockNum uint64, hphState []byte) ([]byte, error) {
+	cs := &commitmentState{trieState: hphState, blockNum: blockNum, txNum: txNum}
+	return cs.Encode()
+}
+
+// Exported for kaiatrie.DeferredContext.
+func DecodeCommitmentState(buf []byte) (txNum, blockNum uint64, hphState []byte, err error) {
+	cs := new(commitmentState)
+	if err := cs.Decode(buf); err != nil {
+		return 0, 0, nil, err
+	}
+	return cs.txNum, cs.blockNum, cs.trieState, nil
+}
+
 func decodeShorterKey(from []byte) uint64 {
 	of, n := binary.Uvarint(from)
 	if n == 0 {

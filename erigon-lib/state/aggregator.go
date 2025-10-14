@@ -1673,6 +1673,14 @@ func (at *AggregatorRoTx) DebugGetLatestFromFiles(domain kv.Domain, k []byte, ma
 	return at.d[domain].getLatestFromFiles(k, maxTxNum)
 }
 
+// Exported for kaiatrie.DomainsManager
+func (at *AggregatorRoTx) NewWriter(domain kv.Domain) *domainBufferedWriter {
+	return at.d[domain].NewWriter()
+}
+func (at *AggregatorRoTx) CloseValsCursor(domain kv.Domain) {
+	at.d[domain].closeValsCursor()
+}
+
 func (at *AggregatorRoTx) Unwind(ctx context.Context, tx kv.RwTx, txNumUnwindTo uint64, changeset *[kv.DomainLen][]kv.DomainEntryDiff) error {
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()

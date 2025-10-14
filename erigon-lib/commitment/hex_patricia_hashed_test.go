@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/erigontech/erigon-lib/common"
+	"github.com/erigontech/erigon-lib/common/hexutil"
 	"github.com/erigontech/erigon-lib/common/length"
 )
 
@@ -1005,6 +1006,7 @@ func TestUpdate_EncodeDecode(t *testing.T) {
 				0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}},
 		{Flags: StorageUpdate, Storage: [length.Hash]byte{0x21, 0x22, 0x23, 0x24}, StorageLen: 4, CodeHash: [32]byte(EmptyCodeHash)},
 		{Flags: DeleteUpdate, CodeHash: [32]byte(EmptyCodeHash)},
+		{Flags: RawBytesUpdate, CodeHash: [32]byte(EmptyCodeHash), RawBytes: hexutil.MustDecode("0x0102030405060708090a0b0c0d0e0f10")},
 	}
 
 	var numBuf [10]byte

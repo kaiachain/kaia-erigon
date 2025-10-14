@@ -532,6 +532,11 @@ func (w *domainBufferedWriter) close() {
 	}
 }
 
+// Exported for kaiatrie.DomainsManager
+func (w *domainBufferedWriter) Close() {
+	w.close()
+}
+
 // nolint
 func loadSkipFunc() etl.LoadFunc {
 	var preKey, preVal []byte
